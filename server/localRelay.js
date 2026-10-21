@@ -100,7 +100,6 @@ export async function readLimitedText(response, limit = MAX_RESPONSE_BYTES) {
     if (done) break;
     if (size + value.byteLength > limit) {
       chunks.push(value.subarray(0, limit - size));
-      size = limit;
       await reader.cancel().catch(() => {});
       return { body: Buffer.concat(chunks).toString("utf8"), truncated: true };
     }
