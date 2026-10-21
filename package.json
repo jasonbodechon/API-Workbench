@@ -6,21 +6,21 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "lint": "eslint src vite.config.js",
+    "lint": "eslint src server vite.config.js",
     "preview": "vite preview",
     "test": "node --test"
   },
   "dependencies": {
-    "@vitejs/plugin-react": "latest",
-    "vite": "latest",
-    "react": "latest",
-    "react-dom": "latest"
+    "@vitejs/plugin-react": "6.0.5",
+    "vite": "8.2.1",
+    "react": "19.2.8",
+    "react-dom": "19.2.8"
   },
   "devDependencies": {
-    "eslint": "latest",
-    "@eslint/js": "latest",
-    "eslint-plugin-react-hooks": "latest",
-    "eslint-plugin-react-refresh": "latest",
-    "globals": "latest"
+    "eslint": "10.8.1",
+    "@eslint/js": "10.0.1",
+    "eslint-plugin-react-hooks": "7.1.1",
+    "eslint-plugin-react-refresh": "0.5.4",
+    "globals": "17.11.0"
   }
 }

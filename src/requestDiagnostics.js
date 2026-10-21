@@ -1,3 +1,5 @@
+import { redactUrl } from "./secrets.js";
+
 const classify = (message, transport) => {
   const lower = message.toLowerCase();
   if (/refused|econnrefused/.test(lower)) return ["Connection refused", "Confirm the target API is running and its host and port are correct."];
@@ -8,15 +10,17 @@ const classify = (message, transport) => {
   return ["Network request failed", "Check the URL, target service, network connection, and request transport."];
 };
 
-export function createRequestDiagnostics({ error, method, url, transport, elapsedMs, relayStatus }) {
-  const message = error instanceof Error ? error.message : String(error);
+export function createRequestDiagnostics({ error, method, url, transport, elapsedMs, relayStatus, secretQueryNames = [] }) {
+  const rawMessage = error instanceof Error ? error.message : String(error);
+  const safeUrl = redactUrl(url, { extraQueryNames: secretQueryNames });
+  const message = url ? rawMessage.split(url).join(safeUrl) : rawMessage;
   const [type, suggestion] = classify(message, transport);
   return {
     type,
     code: error?.code || null,
     message,
     method,
-    url,
+    url: safeUrl,
     transport,
     elapsedMs,
     relayStatus: relayStatus || null,

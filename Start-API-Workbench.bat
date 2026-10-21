@@ -23,7 +23,7 @@ if errorlevel 1 (
   exit /b 1
 )
 
-for %%F in ("src\App.jsx" "src\urlEncoding.js" "src\responseFormatting.js" "src\requestSettings.js" "src\requestHistory.js" "src\requestDiagnostics.js" "src\version.js" "vite.config.js" "package.json") do (
+for %%F in ("src\App.jsx" "src\urlEncoding.js" "src\responseFormatting.js" "src\requestSettings.js" "src\requestHistory.js" "src\requestDiagnostics.js" "src\version.js" "src\curlCommand.js" "src\secrets.js" "server\localRelay.js" "vite.config.js" "package.json" "package-lock.json") do (
   if not exist "%%~F" (
     echo ERROR: Required file is missing: %%~F
     echo Extract the complete API Workbench release into a new folder.
@@ -32,13 +32,26 @@ for %%F in ("src\App.jsx" "src\urlEncoding.js" "src\responseFormatting.js" "src\
   )
 )
 
-echo Checking dependencies...
-call npm install
-if errorlevel 1 (
-  echo.
-  echo ERROR: Dependency installation failed.
-  pause
-  exit /b 1
+rem Install the exact versions recorded in package-lock.json. npm ci never
+rem upgrades packages, and it only runs when the lockfile has changed since
+rem the last successful install.
+set "LOCK_STAMP=node_modules\.api-workbench-lock"
+set "NEEDS_INSTALL=1"
+if exist "%LOCK_STAMP%" (
+  fc /b "package-lock.json" "%LOCK_STAMP%" >nul 2>nul && set "NEEDS_INSTALL=0"
+)
+if "%NEEDS_INSTALL%"=="1" (
+  echo Installing locked dependencies...
+  call npm ci
+  if errorlevel 1 (
+    echo.
+    echo ERROR: Dependency installation failed.
+    pause
+    exit /b 1
+  )
+  copy /y "package-lock.json" "%LOCK_STAMP%" >nul
+) else (
+  echo Dependencies are up to date.
 )
 
 echo.

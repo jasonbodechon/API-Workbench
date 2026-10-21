@@ -5,6 +5,25 @@ import { createRequestDiagnostics, diagnosticsAsText } from "./requestDiagnostic
 import { APP_VERSION_LABEL } from "./version.js";
 import { encodeRequestUrl } from "./urlEncoding.js";
 import { formatResponseBody } from "./responseFormatting.js";
+import { buildCurlCommand } from "./curlCommand.js";
+
+const RELAY_TOKEN_HEADER = "X-API-Workbench-Token";
+const relayToken = () => document.querySelector('meta[name="api-workbench-relay-token"]')?.content || "";
+
+// Loads history and immediately re-saves it, so credentials stored by earlier versions are erased.
+function loadHistory() {
+  try {
+    const source = localStorage.getItem(REQUEST_HISTORY_KEY);
+    const entries = parseRequestHistory(source);
+    if (source) {
+      if (entries.length) localStorage.setItem(REQUEST_HISTORY_KEY, JSON.stringify(entries));
+      else localStorage.removeItem(REQUEST_HISTORY_KEY);
+    }
+    return entries;
+  } catch {
+    return [];
+  }
+}
 
 const row = () => ({ id: crypto.randomUUID(), enabled: true, key: "", value: "" });
 const initialRequest = {
@@ -56,7 +75,7 @@ function CopyButton({ copied, label, onClick }) {
 
 export default function App() {
   const [request, setRequest] = useState(initialRequest);
-  const [history, setHistory] = useState(() => parseRequestHistory(localStorage.getItem(REQUEST_HISTORY_KEY)));
+  const [history, setHistory] = useState(loadHistory);
   const [historyMethodFilter, setHistoryMethodFilter] = useState("all");
   const [historyOutcomeFilter, setHistoryOutcomeFilter] = useState("all");
   const [tab, setTab] = useState("params");
@@ -98,7 +117,7 @@ export default function App() {
     setRequest(restoreHistoryRequest(entry));
     setResponse(null);
     setDiagnostics(null);
-    setNotice("Complete request restored from history.");
+    setNotice("Request restored from history. Credentials are not saved in history, so re-enter any token, password, or API key.");
   };
 
   const clearHistory = () => {
@@ -129,7 +148,7 @@ export default function App() {
       const canBody = !["GET", "HEAD"].includes(request.method) && request.bodyType !== "none";
       const options = { method: request.method, headers, body: canBody ? request.body : undefined };
       const result = request.transport === "relay"
-        ? await fetch("/api/request", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ url: target, ...options }) })
+        ? await fetch("/api/request", { method: "POST", headers: { "Content-Type": "application/json", [RELAY_TOKEN_HEADER]: relayToken() }, body: JSON.stringify({ url: target, ...options }) })
         : await fetch(target, options);
       const relayPayload = request.transport === "relay" ? await result.json() : null;
       if (request.transport === "relay" && !result.ok && relayPayload?.relayError) throw Object.assign(new Error(relayPayload.message), { code: relayPayload.code, relayStatus: result.status });
@@ -139,10 +158,12 @@ export default function App() {
       const body = relayPayload ? relayPayload.body : await result.text();
       const elapsedMs = Math.round(performance.now() - started);
       setResponse({ status, statusText, headers: responseHeaders, body, elapsedMs, size: new Blob([body]).size, request: sentRequest });
+      if (relayPayload?.truncated) setNotice("The response was larger than 10 MB, so only the first 10 MB is shown.");
+      else if (relayPayload?.redirected) setNotice(`The server responded with a redirect to ${responseHeaders.location}. The relay does not follow redirects automatically.`);
       addHistoryEntry(sentRequest, { ok: status < 400, status, statusText, elapsedMs });
     } catch (error) {
       const elapsedMs = Math.round(performance.now() - started);
-      const requestDiagnostics = createRequestDiagnostics({ error, method: sentRequest.method, url: target || sentRequest.url, transport: sentRequest.transport, elapsedMs, relayStatus: error.relayStatus });
+      const requestDiagnostics = createRequestDiagnostics({ error, method: sentRequest.method, url: target || sentRequest.url, transport: sentRequest.transport, elapsedMs, relayStatus: error.relayStatus, secretQueryNames: sentRequest.auth.type === "api-key" && sentRequest.auth.keyLocation === "query" ? [sentRequest.auth.keyName] : [] });
       setDiagnostics(requestDiagnostics);
       addHistoryEntry(sentRequest, { ok: false, elapsedMs, errorType: requestDiagnostics.type });
     } finally { setLoading(false); }
@@ -161,13 +182,12 @@ export default function App() {
     catch (error) { setNotice(`Import failed: ${error.message}`); }
   };
 
-  const curl = (sourceRequest = request) => {
-    const target = buildTarget(sourceRequest); const headers = requestHeaders(sourceRequest);
-    const quote = (value) => `"${String(value).replaceAll('"', '\\"')}"`;
-    const parts = ["curl", "-X", sourceRequest.method, quote(target), ...Object.entries(headers).flatMap(([key, value]) => ["-H", quote(`${key}: ${value}`)])];
-    if (!["GET", "HEAD"].includes(sourceRequest.method) && sourceRequest.bodyType !== "none") parts.push("--data-raw", quote(sourceRequest.body));
-    return parts.join(" ");
-  };
+  const curl = (sourceRequest = request) => buildCurlCommand({
+    method: sourceRequest.method,
+    url: buildTarget(sourceRequest),
+    headers: requestHeaders(sourceRequest),
+    body: sourceRequest.bodyType !== "none" ? sourceRequest.body : undefined,
+  });
 
   const generatedCurl = response ? curl(response.request) : "";
 
